@@ -5,12 +5,21 @@
 /*
  * 		TRANSMISSIONS
  *
+ *		0x001 : Input acceleration structure
  * 		0x111 : First choice message
  * 		0x222 : Battery configurations
  * 		0x333 : Battery Status
  * 		0x444 : mirror Rx data
  *
  * 		0x201 : update temperature
+ * 		0x202 : update SOH
+ * 		0x203 : update SOC
+ *
+ * 		0x211 : update degradation_rate cell [0]
+ * 		0x212 : u d r cell[1]
+ * 		0x213 : udr cell[2]
+ *
+ *
  *
  *
  * 		RECEPTION
@@ -200,6 +209,8 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   uint32_t new_time = 0;
   uint32_t last_time = 0;
+  uint32_t config_counter = 0;
+  uint32_t config_counter_last = 0;
   while (1)
   {
     /* USER CODE END WHILE */
@@ -207,7 +218,13 @@ int main(void)
 	  calculate_outputs();
 	  if (new_time - last_time >= 2500) {
 		  if(init_complete) send_struct(0x333, &battery_status, sizeof(battery_status));
-		  else send_first_message();
+		  else {
+			  config_counter = HAL_GetTick();
+			  if(config_counter - config_counter_last >= 10000){
+				  send_first_message();
+				  config_counter_last = config_counter;
+			  }
+		  }
 		  last_time = new_time;
 	  }
     /* USER CODE BEGIN 3 */
@@ -412,21 +429,20 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan) {
 
     if(HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &rxHeader, rxData) == HAL_OK) {
 
+    	send_rx_data();
         switch (rxHeader.StdId) {
 
 			case 0x555: {                              		// 0X555   to choose CUSTOM or DEFAULT inits
-				send_rx_data();
 				choice_handler(rxData[0]);
 				break;
 			}
 
 
             case 0x666: {                                  // 0X666 GIVES THE ACCELERATION VALUE OF THE VEHICLE
-            	send_rx_data();
             	inputdata.acceleration = rxData[0];
                 uint32_t pwm_val = (uint32_t)((inputdata.acceleration/100)*65535);
                 __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_4, pwm_val);
-                send_struct(0x444, &inputdata, sizeof(inputdata));
+                send_struct(0x001, &inputdata, sizeof(inputdata));
                 break;
             }
 
